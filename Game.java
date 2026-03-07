@@ -27,6 +27,7 @@ public class Game extends GameCore implements MouseListener
     boolean moveRight = false, moveLeft = false, onGround = false, jumpPressed = false, debug = false;
     boolean isAlive = true;
     boolean showDeathScreen = false; 
+    boolean levelCompleted = false; // Flag for level completion
     long deathTimer = 0; // Timer to ensure the 1-frame death UI pops up
     
     // Game resources
@@ -42,9 +43,11 @@ public class Game extends GameCore implements MouseListener
     TileMap tmap = new TileMap(); // Our tile map, note that we load it in init()
     
     long total; // The score will be the total time elapsed since a crash
+    int currentLevel = 1; // Track current level
 
-    // UI Button - Centered on screen
+    // UI Buttons
     Rectangle restartBtn = new Rectangle(screenWidth/2 - 50, screenHeight/2 + 20, 100, 40);
+    Rectangle nextBtn = new Rectangle(screenWidth/2 - 50, screenHeight/2 + 20, 100, 40);
 
     /**
 	 * The obligatory main method that creates
@@ -71,6 +74,7 @@ public class Game extends GameCore implements MouseListener
         Sprite s; // Temporary reference to a sprite
 
         // Load the tile map and print it out so we can check it is valid
+        // NOTE: This method automatically loads images defined in the txt file!
         tmap.loadMap("maps", "level1.txt");
         
         setSize(screenWidth, screenHeight);
@@ -85,39 +89,29 @@ public class Game extends GameCore implements MouseListener
         treesFrontLayer = loadImage("images/2.png");
         groundLayer = loadImage("images/1.png");
         
-        // Create a set of background sprites that we can 
-        // rearrange to give the illusion of motion
-        
+        // Create a set of background sprites
         landing = new Animation();
         landing.loadAnimationFromSheet("images/Lidle.png", 2, 1, 300);
-        
         walk = new Animation();
         walk.loadAnimationFromSheet("images/Lwalk.png", 6, 1, 100);
-        
         walkR = new Animation();
         walkR.loadAnimationFromSheet("images/Walk.png", 6, 1, 100);
-
         jump = new Animation();
         jump.loadAnimationFromSheet("images/Ljump.png", 2, 1, 1000);
-        
         jumpL = new Animation();
         jumpL.loadAnimationFromSheet("images/Jump.png", 2, 1, 1000);
 
-        // Death animation - keep to 1,1 for your specific spritesheet
         death = new Animation();
         death.loadAnimationFromSheet("images/Death.png", 1, 1, 150); 
         death.setLoop(false); 
 
-        // Initialise the player with an animation
+        // Initialise the player
         player = new Sprite(landing);
         player.setScale(2.0f);
         
-        // Load a single cloud animation
+        // Load cloud animation
         Animation ca = new Animation();
         ca.addFrame(loadImage("images/cloud.png"), 1000);
-        
-        // Create 3 clouds at random positions off the screen
-        // to the right
         for (int c=0; c<6; c++) {
             s = new Sprite(ca);
             s.setX((int)(Math.random() * tmap.getPixelWidth()));
@@ -128,7 +122,6 @@ public class Game extends GameCore implements MouseListener
         }
         
         initialiseGame();
-        
         System.out.println(tmap);
     }
 
@@ -141,69 +134,49 @@ public class Game extends GameCore implements MouseListener
         total = 0;
         isAlive = true;
         showDeathScreen = false; 
-        deathTimer = 0; // Reset the death timer
-        player.setPosition(500, 2700); //starting position of the penguin
+        levelCompleted = false;
+        deathTimer = 0; 
+        player.setPosition(500, 2700); 
         player.setVelocity(0, 0);
         player.setAnimation(landing);
         player.show();
     }
     
     /**
-     * Draw the current state of the game. Note the sample use of
-     * debugging output that is drawn directly to the game screen.
+     * Draw the current state of the game.
      */
     public void draw(Graphics2D g) {    
-    	// Be careful about the order in which you draw objects - you
-    	// should draw the background first, then work your way 'forward'
-
-    	// First work out how much we need to shift the view in order to
-    	// see where the player is. To do this, we adjust the offset so that
-        // it is relative to the player's position along with a shift
         int xo = -(int)player.getX() + (screenWidth / 2);
         int yo = -(int)player.getY() + (screenHeight / 2);
 
-        // Continuous scrolling logic
         int bgWidth = 800; 
-
-        // Draw parallax background layers with horizontal tiling
         drawLoopingLayer(g, skyLayer, xo, 0.1f, 0, bgWidth);
         drawLoopingLayer(g, mountainLayer, xo, 0.3f, 0, bgWidth);
         drawLoopingLayer(g, treesBackLayer, xo, 0.5f, 0, bgWidth);
         drawLoopingLayer(g, treesFrontLayer, xo, 0.7f, 0, bgWidth);
         drawLoopingLayer(g, groundLayer, xo, 0.9f, 0, bgWidth);
         
-        // Apply offsets to sprites then draw them
         for (Sprite s: clouds) {
             s.setOffsets((int)(xo * 0.5f), yo); 
             s.draw(g);
         }
 
-        // Apply offsets to tile map and draw  it
         tmap.draw(g, xo, yo); 
-
-        // Apply offsets to player and draw 
         player.setOffsets(xo, yo);
         player.draw(g);
         
-        // Show score and status information
         String scoreMsg = String.format("Score: %d", total/100);
         g.setColor(Color.darkGray);
         g.drawString(scoreMsg, getWidth() - 100, 50);
         
         if (debug) {
-        	// When in debug mode, you could draw borders around objects
-            // and write messages to the screen with useful information.
-            // Try to avoid printing to the console since it will produce 
-            // a lot of output and slow down your game.
             g.setColor(Color.red);
             player.drawBoundingBox(g);
             drawCollidedTiles(g, tmap, xo, yo);
         }
 
-        // DRAW UI LAST so it's on top of everything
-        if (showDeathScreen) {
-            drawDeathUI(g);
-        }
+        if (showDeathScreen) drawDeathUI(g);
+        if (levelCompleted) drawWinUI(g);
     }
 
     /**
@@ -220,18 +193,11 @@ public class Game extends GameCore implements MouseListener
     }
 
     private void drawDeathUI(Graphics2D g) {
-        // Overlay
         g.setColor(new Color(0, 0, 0, 180));
         g.fillRect(0, 0, screenWidth, screenHeight);
-
-        // Text
         g.setColor(Color.WHITE);
         g.setFont(new Font("Arial", Font.BOLD, 60));
-        String msg = "YOU DIED";
-        int strWidth = g.getFontMetrics().stringWidth(msg);
-        g.drawString(msg, (screenWidth - strWidth) / 2, screenHeight / 2 - 20);
-
-        // Button
+        g.drawString("YOU DIED", (screenWidth - g.getFontMetrics().stringWidth("YOU DIED")) / 2, screenHeight / 2 - 20);
         g.setColor(Color.RED);
         g.fill(restartBtn);
         g.setColor(Color.WHITE);
@@ -240,11 +206,24 @@ public class Game extends GameCore implements MouseListener
         g.drawString("Restart", restartBtn.x + 18, restartBtn.y + 26);
     }
 
+    private void drawWinUI(Graphics2D g) {
+        g.setColor(new Color(0, 100, 0, 180)); 
+        g.fillRect(0, 0, screenWidth, screenHeight);
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Arial", Font.BOLD, 50));
+        g.drawString("LEVEL COMPLETED!", (screenWidth - g.getFontMetrics().stringWidth("LEVEL COMPLETED!")) / 2, screenHeight / 2 - 20);
+        g.setColor(Color.BLUE);
+        g.fill(nextBtn);
+        g.setColor(Color.WHITE);
+        g.draw(nextBtn);
+        g.setFont(new Font("Arial", Font.BOLD, 18));
+        g.drawString("Next", nextBtn.x + 30, nextBtn.y + 26);
+    }
+
     public void drawCollidedTiles(Graphics2D g, TileMap map, int xOffset, int yOffset) {
 		if (collidedTiles.size() > 0) {   
 			int tileWidth = map.getTileWidth();
 			int tileHeight = map.getTileHeight();
-			
             g.setColor(Color.blue);
             for (Tile t : collidedTiles)
                 g.drawRect(t.getXC() + xOffset, t.getYC() + yOffset, tileWidth, tileHeight);
@@ -256,23 +235,18 @@ public class Game extends GameCore implements MouseListener
      * * @param elapsed The elapsed time between this call and the previous call of elapsed
      */
     public void update(long elapsed) {
-        if (!isAlive) {
-            // Now update the sprites animation and position
+        if (!isAlive || levelCompleted) {
             player.update(elapsed);
-            // Wait for 150ms before showing the screen
-            deathTimer += elapsed;
-            if (deathTimer >= 150) { 
-                showDeathScreen = true;
+            if (!isAlive && !levelCompleted) {
+                deathTimer += elapsed;
+                if (deathTimer >= 150) showDeathScreen = true;
             }
             return;
         }
 
         total += elapsed;
-
-        // Make adjustments to the speed of the sprite due to gravity
         player.setVelocityY(player.getVelocityY() + (gravity * elapsed));
         
-        // Handle Animations properly
         if (moveRight) {
             player.setVelocityX(moveSpeed);
             if (!onGround) { if (player.getAnimation() != jump) player.setAnimation(jump); }
@@ -291,122 +265,87 @@ public class Game extends GameCore implements MouseListener
         }
         
         for (Sprite s: clouds) s.update(elapsed);
-        
-        // Now update the sprites animation and position
         player.update(elapsed);
-       
-        // Then check for any collisions that may have occurred
         handleScreenEdge(player, tmap, elapsed);
         checkTileCollision(player, tmap);
         
         if (jumpPressed && onGround) {
-            player.setVelocityY(-0.20f);
+            player.setVelocityY(-0.17f);
             onGround = false;
             jumpPressed = false;
         }
     }
     
     /**
-     * Checks and handles collisions with the edge of the screen. You should generally
-     * use tile map collisions to prevent the player leaving the game area. This method
-     * is only included as a temporary measure until you have properly developed your
-     * tile maps.
-     * * @param s			The Sprite to check collisions for
-     * @param tmap		The tile map to check 
-     * @param elapsed	How much time has gone by since the last call
+     * Checks and handles collisions with the edge of the screen.
      */
     public void handleScreenEdge(Sprite s, TileMap tmap, long elapsed) {
-    	// This method just checks if the sprite has gone off the bottom screen.
-    	// Ideally you should use tile collision instead of this approach
-    	
         if (s.getY() + 32.0f > tmap.getPixelHeight()) {
             if (isAlive) {
                 isAlive = false;
                 s.setVelocity(0, 0);
-                death.start(); // Resets animation to frame 0
+                death.start(); 
                 s.setAnimation(death);
             }
         }
     }
 
     /**
-     * Override of the keyPressed event defined in GameCore to catch our
-     * own events
-     * * @param e The event that has been generated
+     * Override of the keyPressed event.
      */
     public void keyPressed(KeyEvent e) { 
         int key = e.getKeyCode();
-        
         switch (key)
         {
             case KeyEvent.VK_UP: jumpPressed = true; break;
             case KeyEvent.VK_RIGHT: moveRight = true; break;
             case KeyEvent.VK_LEFT: moveLeft = true; break;
             case KeyEvent.VK_ESCAPE: stop(); System.exit(0); break;
-            case KeyEvent.VK_B: debug = !debug; break; // Flip the debug state
-            default: break;
+            case KeyEvent.VK_B: debug = !debug; break;
         }
     }
 
-    /** Use the sample code in the lecture notes to properly detect
-     * a bounding box collision between sprites s1 and s2.
-     * * @return	true if a collision may have occurred, false if it has not.
-     */
-    public boolean boundingBoxCollision(Sprite s1, Sprite s2) {
-        return false;   	
-    }
+    public boolean boundingBoxCollision(Sprite s1, Sprite s2) { return false; }
     
     /**
-     * Check and handles collisions with a tile map for the
-     * given sprite 's'. Initial functionality is limited...
-     * * @param s			The Sprite to check collisions for
-     * @param tmap		The tile map to check 
+     * Check and handles collisions with a tile map for the given sprite 's'.
      */
     public void checkTileCollision(Sprite s, TileMap tmap) {
-    	// Empty out our current set of collided tiles
         collidedTiles.clear();
-        
-        // Take a note of a sprite's current position
         float sx = s.getX(), sy = s.getY();
         float pSize = 32.0f; 
         float swidth = pSize * 0.8f; 
         float offsetX = (pSize - swidth) / 2;
-        
-        // Find out how wide and how tall a tile is
         float tileWidth = tmap.getTileWidth(), tileHeight = tmap.getTileHeight();
-        
-        // Divide the sprite's x coordinate by the width of a tile, to get
-    	// the number of tiles across the x axis that the sprite is positioned at
         int xL = (int) ((sx + offsetX) / tileWidth);
         int xR = (int) ((sx + offsetX + swidth - 1) / tileWidth);
         int xMid = (int) ((sx + (pSize / 2)) / tileWidth); 
-        
-        // The same applies to the y coordinate
         int yB = (int) ((sy + pSize) / tileHeight); 
-        
-        // What tile character is at the bottom of the sprite s?
         Tile fL = tmap.getTile(xL, yB), fR = tmap.getTile(xR, yB), fMid = tmap.getTile(xMid, yB);
-        
         onGround = false; 
-        
-        // If it's not empty space
         if (s.getVelocityY() >= 0) {
+            // Death tile check
+            if ((fL != null && fL.getCharacter() == 's') || (fR != null && fR.getCharacter() == 's') || (fMid != null && fMid.getCharacter() == 's')) {
+                isAlive = false; s.setVelocity(0, 0); death.start(); s.setAnimation(death); return;
+            }
+            // Win tile check
+            if ((fL != null && fL.getCharacter() == 'o') || (fR != null && fR.getCharacter() == 'o') || (fMid != null && fMid.getCharacter() == 'o')) {
+                levelCompleted = true; s.setVelocity(0, 0); return;
+            }
+            // Ground check
             if ((fL != null && fL.getCharacter() != '.') || (fR != null && fR.getCharacter() != '.') || (fMid != null && fMid.getCharacter() != '.')) {
                 Tile t = (fMid != null && fMid.getCharacter() != '.') ? fMid : (fL != null && fL.getCharacter() != '.') ? fL : fR;
-                
-                // You should move the sprite to a position that is not colliding
-                s.setY(t.getYC() - pSize); 
-                s.setVelocityY(0); 
-                onGround = true;
-                collidedTiles.add(t);
+                s.setY(t.getYC() - pSize); s.setVelocityY(0); onGround = true; collidedTiles.add(t);
             }
         }
     }
 
     @Override
     public void mouseClicked(MouseEvent e) {
-        // Detect click on restart button when screen is active
-        if (showDeathScreen && restartBtn.contains(e.getPoint())) {
+        if (showDeathScreen && restartBtn.contains(e.getPoint())) initialiseGame();
+        if (levelCompleted && nextBtn.contains(e.getPoint())) {
+            currentLevel++;
+            tmap.loadMap("maps", "level" + currentLevel + ".txt");
             initialiseGame();
         }
     }
@@ -418,14 +357,12 @@ public class Game extends GameCore implements MouseListener
 
     public void keyReleased(KeyEvent e) { 
         int key = e.getKeyCode();
-        
         switch (key)
         {
             case KeyEvent.VK_ESCAPE: stop(); break;
             case KeyEvent.VK_UP: jumpPressed = false; break;
             case KeyEvent.VK_RIGHT: moveRight = false; break;
             case KeyEvent.VK_LEFT: moveLeft = false; break;
-            default: break;
         }
     }
 }
